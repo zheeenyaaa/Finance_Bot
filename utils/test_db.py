@@ -1,27 +1,21 @@
-﻿
-import psycopg2
-try:
-    connection = psycopg2.connect(
-        user="admin",
-        password="frgewrjh324932y4",
-        host="91.222.236.126",
-        port=5432,
-        dbname="my_first_db"
-    )
-    print("Подключение успешно!")
-    
-    # Создаем курсор для выполнения SQL-запросов
-    cursor = connection.cursor()
-    
-    # Пример запроса
-    cursor.execute("SELECT NOW();")
-    result = cursor.fetchone()
-    print("Текущее время:", result)
+import sqlite3
 
-    # Закрываем курсор и соединение
-    cursor.close()
-    connection.close()
-    print("Соединение закрыто.")
+from configs.settings import DB_FILE
 
-except Exception as e:
-    print(f"Ошибка подключения: {e}")
+
+def check_connection():
+    """Проверка подключения к основной базе данных SQLite."""
+    try:
+        with sqlite3.connect(DB_FILE) as connection:
+            current_time = connection.execute(
+                "SELECT CURRENT_TIMESTAMP"
+            ).fetchone()[0]
+        print(f"Подключение к SQLite успешно. Текущее время: {current_time}")
+        return True
+    except sqlite3.Error as error:
+        print(f"Ошибка подключения к SQLite: {error}")
+        return False
+
+
+if __name__ == "__main__":
+    check_connection()

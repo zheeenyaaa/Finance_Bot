@@ -1,5 +1,21 @@
-# Игнорируем файл настроек с конфиденциальными данными
+# Локальные настройки и секреты
+.env
+.env.*
+!.env.example
 configs/settings.py
+configs/settings.local.py
+!configs/settings.example.py
+*secret*
+*credentials*
+service-account*.json
+
+# Приватные ключи и сертификаты
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
 
 # Python
 __pycache__/
@@ -23,30 +39,46 @@ wheels/
 .installed.cfg
 *.egg
 
-# Виртуальное окружение
+# Виртуальные окружения
+.venv/
 venv/
 env/
 ENV/
-.env
-.venv
 env.bak/
 venv.bak/
 
-# База данных
+# Кеши тестов, линтеров и отчеты покрытия
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Локальные базы данных SQLite
 *.db
-*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 
 # Логи
 logs/
 *.log
 
-# IDE
+# IDE и редакторы
+.cursor/
 .idea/
 .vscode/
+.vs/
 *.swp
 *.swo
-.vs/
 *.sublime-workspace
 *.sublime-project
 
@@ -55,14 +87,13 @@ logs/
 Thumbs.db
 desktop.ini
 
-# Временные файлы
+# Временные и резервные файлы
 *.tmp
+*.temp
 *.bak
-*.swp
+*.orig
 *~
 
-# Файлы Excel (если используются для тестов/временных данных)
+# Локальные таблицы и выгрузки
 *.xlsx
-*.xls 
-
-.cursor/
+*.xls
