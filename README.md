@@ -30,7 +30,7 @@ FinanceBot — Telegram-бот для личного учета доходов �
 Откройте PowerShell в папке, куда хотите поместить проект:
 
 ```powershell
-git clone <АДРЕС_РЕПОЗИТОРИЯ>
+git clone https://github.com/zheeenyaaa/Finance_Bot.git
 cd finance
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
