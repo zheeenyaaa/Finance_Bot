@@ -4,7 +4,7 @@ from utils.bot_db import *
 from markups import balance_markup
 
 
-def unified_handler_get_balance(user_id, message_id, source_type):
+def unified_handler_get_balance(user_id, chat_id, message_id, source_type):
     try:
         # Получаем текущую дату
         current_date = datetime.now()
@@ -22,37 +22,57 @@ def unified_handler_get_balance(user_id, message_id, source_type):
         
         if source_type == "callback":
             bot.edit_message_text(
-            chat_id=user_id,
-            message_id=message_id,
-            text=text,
-            reply_markup=balance_markup(user_id, year, month),
-            parse_mode="HTML"
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=balance_markup(user_id, year, month),
+                parse_mode="HTML"
             )
         else:
             bot.send_message(
-                user_id, 
+                chat_id,
                 text,
                 reply_markup=balance_markup(user_id, year, month),
                 parse_mode="HTML"
             )
+        return True
     except Exception as e:
         logger.exception("Ошибка %s при показе баланса", e)
+        bot.send_message(
+            chat_id,
+            "❌ Не удалось получить баланс. Попробуйте ещё раз.",
+        )
+        return False
 
 
 @bot.message_handler(commands=["balance"])
 def handle_view_balance(message):
-    chat_id = message.from_user.id
+    user_id = message.from_user.id
+    chat_id = message.chat.id
     message_id = message.message_id
-    unified_handler_get_balance(chat_id, message_id, source_type="command")
+    unified_handler_get_balance(
+        user_id,
+        chat_id,
+        message_id,
+        source_type="command",
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "balance")
 def show_balance(call):
     """Показ текущего баланса"""
-    chat_id = call.from_user.id
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
     message_id = call.message.message_id
-    unified_handler_get_balance(chat_id, message_id, source_type="callback")
-    bot.answer_callback_query(call.id)
+    try:
+        unified_handler_get_balance(
+            user_id,
+            chat_id,
+            message_id,
+            source_type="callback",
+        )
+    finally:
+        bot.answer_callback_query(call.id)
     
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("balance_"))
@@ -79,7 +99,6 @@ def handle_balance_navigation(call):
         # Форматируем сообщение
         month_name = get_month_name(month)
         
-        bot.answer_callback_query(call.id)
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -91,3 +110,9 @@ def handle_balance_navigation(call):
         )
     except Exception as e:
         logger.exception("Ошибка %s при навигации по балансу", e)
+        bot.send_message(
+            call.message.chat.id,
+            "❌ Не удалось открыть баланс за выбранный месяц.",
+        )
+    finally:
+        bot.answer_callback_query(call.id)

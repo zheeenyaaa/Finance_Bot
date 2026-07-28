@@ -118,9 +118,10 @@ def balance_markup(user_id, year, month):
     oldest_transaction = get_oldest_transaction_by_user(user_id)
     # Проверяем, есть ли у пользователя транзакции
     if oldest_transaction:
-        # oldest_transaction_date = oldest_transaction.split(" ")[0]
         if isinstance(oldest_transaction, str):
-            oldest_transaction_date = datetime.strptime(oldest_transaction, "%Y-%m-%d").date()
+            oldest_transaction_date = datetime.fromisoformat(
+                oldest_transaction.replace("Z", "+00:00")
+            ).date()
         else:
             # Если это уже объект datetime, просто получаем date
             oldest_transaction_date = oldest_transaction.date()

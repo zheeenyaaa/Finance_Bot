@@ -112,10 +112,15 @@ def show_detailed_statistics(call):
         )
 
 # функция для обработки команды показа статистики за сегодня
-def unified_handle_show_today_statistics(chat_id, message_id, source_type):
+def unified_handle_show_today_statistics(
+    user_id,
+    chat_id,
+    message_id,
+    source_type,
+):
     """Показ статистики за сегодня"""
     try:
-        stats = get_period_statistics(chat_id, 'day')
+        stats = get_period_statistics(user_id, 'day')
         
         if not stats or (not stats['income'] and not stats['expense']):
             if source_type == "call":
@@ -145,8 +150,8 @@ def unified_handle_show_today_statistics(chat_id, message_id, source_type):
                 message += "Последние транзакции:\n"
                 for trans in data['transactions']:
                     dt_utc = trans["date"]
-                    if has_timezone(chat_id):
-                        dt_local = dt_utc + timedelta(hours=get_timezone_offset(chat_id))
+                    if has_timezone(user_id):
+                        dt_local = dt_utc + timedelta(hours=get_timezone_offset(user_id))
                     else:
                         dt_local = dt_utc + timedelta(hours=3)
                     date = dt_local.strftime('%H:%M')
@@ -165,8 +170,8 @@ def unified_handle_show_today_statistics(chat_id, message_id, source_type):
                 message += "Последние транзакции:\n"
                 for trans in data['transactions']:
                     dt_utc = trans["date"]
-                    if has_timezone(chat_id):
-                        dt_local = dt_utc + timedelta(hours=get_timezone_offset(chat_id))
+                    if has_timezone(user_id):
+                        dt_local = dt_utc + timedelta(hours=get_timezone_offset(user_id))
                     else:
                         dt_local = dt_utc + timedelta(hours=3)
                     date = dt_local.strftime('%H:%M')
@@ -207,17 +212,30 @@ def unified_handle_show_today_statistics(chat_id, message_id, source_type):
 
 @bot.message_handler(commands=["expenses_by_this_day"])
 def handle_show_today_statistics(message):
-    chat_id = message.from_user.id
-    message_id = message.id
-    unified_handle_show_today_statistics(chat_id, message_id, source_type="command")
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    message_id = message.message_id
+    unified_handle_show_today_statistics(
+        user_id,
+        chat_id,
+        message_id,
+        source_type="command",
+    )
 
 @bot.callback_query_handler(func=lambda call: call.data == "expenses_by_this_day")
 def show_today_statistics(call):
+    user_id = call.from_user.id
     chat_id = call.message.chat.id
     message_id = call.message.message_id
-    
-    unified_handle_show_today_statistics(chat_id, message_id, source_type="call")
-    bot.answer_callback_query(call.id)
+    try:
+        unified_handle_show_today_statistics(
+            user_id,
+            chat_id,
+            message_id,
+            source_type="call",
+        )
+    finally:
+        bot.answer_callback_query(call.id)
   
 
 

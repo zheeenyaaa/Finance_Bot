@@ -1,8 +1,17 @@
 ﻿from configs.settings import DB_FILE
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from bot_logging import *
 from configs.tools import get_month_name
 import sqlite3
+
+
+def _parse_db_datetime(value):
+    """Преобразование даты SQLite в datetime для обработчиков Telegram."""
+    if isinstance(value, datetime):
+        return value
+    if value is None:
+        return None
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
 def init_db():
@@ -383,31 +392,66 @@ def add_transaction(user_id, account_id, category, amount, comment):
 
 
 def get_period_statistics(user_id, period='day'):
-    """Получение статистики за период (день/неделя)"""
+    """Получение статистики за период с разделением доходов и расходов."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "SELECT timezone_offset FROM users WHERE user_id = ?",
+            (user_id,),
+        )
+        timezone_row = cursor.fetchone()
+        timezone_offset = (
+            timezone_row[0]
+            if timezone_row and timezone_row[0] is not None
+            else 3
+        )
+
         if period == 'day':
-            date_condition = "DATE(created_at) = DATE('now')"
-        else:  # week
-            date_condition = "DATE(created_at) >= DATE('now', '-7 days')"
+            period_days = 1
+        elif period == 'week':
+            period_days = 7
+        else:
+            raise ValueError(f"Неизвестный период статистики: {period}")
+
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        local_now = now_utc + timedelta(hours=timezone_offset)
+        local_period_end = (
+            datetime(local_now.year, local_now.month, local_now.day)
+            + timedelta(days=1)
+        )
+        local_period_start = local_period_end - timedelta(days=period_days)
+        utc_period_start = local_period_start - timedelta(hours=timezone_offset)
+        utc_period_end = local_period_end - timedelta(hours=timezone_offset)
         
-        cursor.execute(f'''
+        cursor.execute('''
         SELECT 
-            category,
-            amount,
-            created_at,
-            comment
-        FROM transactions
-        WHERE user_id = ?
-        AND {date_condition}
-        ORDER BY created_at DESC
-        ''', (user_id,))
+            t.category,
+            t.amount,
+            t.created_at,
+            t.comment,
+            COALESCE(c.is_expense, 1)
+        FROM transactions AS t
+        LEFT JOIN categories AS c
+            ON c.user_id = t.user_id
+            AND LOWER(c.name) = LOWER(t.category)
+        WHERE t.user_id = ?
+            AND t.created_at >= ?
+            AND t.created_at < ?
+        ORDER BY t.created_at DESC
+        ''', (
+            user_id,
+            utc_period_start.strftime("%Y-%m-%d %H:%M:%S"),
+            utc_period_end.strftime("%Y-%m-%d %H:%M:%S"),
+        ))
         
         transactions = cursor.fetchall()
-        
-        categories = {}
-        for category, amount, created_at, comment in transactions:
+
+        statistics = {'income': {}, 'expense': {}}
+        for category, amount, created_at, comment, is_expense in transactions:
+            transaction_type = 'expense' if is_expense else 'income'
+            categories = statistics[transaction_type]
+
             if category not in categories:
                 categories[category] = {
                     'total': 0,
@@ -419,38 +463,46 @@ def get_period_statistics(user_id, period='day'):
             categories[category]['count'] += 1
             categories[category]['transactions'].append({
                 'amount': amount,
-                'date': created_at,
+                'date': _parse_db_datetime(created_at),
                 'comment': comment
             })
         
         logger.info("[SUCCESS] Получена статистика за период %s: Пользователь=%s", period, user_id)
-        return categories
+        return statistics
     except Exception as e:
         logger.error("Ошибка %s при получении статистики за период", e)
-        return {}
+        return {'income': {}, 'expense': {}}
     finally:
         conn.close()
 
+
 def get_detailed_statistics(user_id):
-    """Получение детальной статистики транзакций"""
+    """Получение полной статистики с разделением доходов и расходов."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute('''
         SELECT 
-            category,
-            amount,
-            created_at,
-            comment
-        FROM transactions
-        WHERE user_id = ?
-        ORDER BY created_at DESC
+            t.category,
+            t.amount,
+            t.created_at,
+            t.comment,
+            COALESCE(c.is_expense, 1)
+        FROM transactions AS t
+        LEFT JOIN categories AS c
+            ON c.user_id = t.user_id
+            AND LOWER(c.name) = LOWER(t.category)
+        WHERE t.user_id = ?
+        ORDER BY t.created_at DESC
         ''', (user_id,))
         
         transactions = cursor.fetchall()
-        
-        categories = {}
-        for category, amount, created_at, comment in transactions:
+
+        statistics = {'income': {}, 'expense': {}}
+        for category, amount, created_at, comment, is_expense in transactions:
+            transaction_type = 'expense' if is_expense else 'income'
+            categories = statistics[transaction_type]
+
             if category not in categories:
                 categories[category] = {
                     'total': 0,
@@ -462,15 +514,15 @@ def get_detailed_statistics(user_id):
             categories[category]['count'] += 1
             categories[category]['transactions'].append({
                 'amount': amount,
-                'date': created_at,
+                'date': _parse_db_datetime(created_at),
                 'comment': comment
             })
         
         logger.info("[SUCCESS] Получена детальная статистика: Пользователь=%s", user_id)
-        return categories
+        return statistics
     except Exception as e:
         logger.error("Ошибка %s при получении детальной статистики", e)
-        return {}
+        return {'income': {}, 'expense': {}}
     finally:
         conn.close()
 
@@ -711,56 +763,44 @@ def get_default_account_id_info(user_id):
         conn.close()
 
 def get_month_balance(user_id, year, month):
-    print(user_id)
     """Получение баланса за месяц"""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
     logger.info("Получение баланса за %s-%s", year, month)
     try:
-        # cursor.execute('SELECT month_start_day FROM users WHERE user_id = ?', (user_id,))
-        # month_start_day = 1
-
-        # if month_start_day > 1:
-        #     if month == 1:
-        #         start_date = f"{year-1}-12-{month_start_day:02d}"
-        #         end_date = f"{year}-{month:02d}-{month_start_day-1:02d}"
-        #     else:
-        #         start_date = f"{year}-{month-1:02d}-{month_start_day:02d}"
-        #         end_date = f"{year}-{month:02d}-{month_start_day-1:02d}"
-        # else:
-        start_date = f"{year}-{month:02d}-01 00:00:00"
+        start_date = datetime(year, month, 1)
         if month == 12:
-            end_date = f"{year+1}-01-01 00:00:00"
+            end_date = datetime(year + 1, 1, 1)
         else:
-            end_date = f"{year}-{month+1:02d}-01 00:00:00"
+            end_date = datetime(year, month + 1, 1)
 
-        try:
-            cursor.execute('''
-            SELECT amount, category
-            FROM transactions
-            WHERE user_id = ?
-            AND created_at >= ?
-            AND created_at < ?
-            ''', (user_id, start_date, end_date))
-
-            transactions = cursor.fetchall()
-            print(transactions, 42)
-            logger.info("Найденные транзакции: %s", transactions)
-        except Exception as e:
-            print("error")
-
-        
-        income = 0
-        expenses = 0
-        income_categories = get_income_categories(user_id)
-       
-        for amount, category in transactions:
-            if get_category_id_by_name(user_id, category) in income_categories:
-                income += amount
-            else:
-                expenses += amount
-        
+        cursor.execute(
+            '''
+            SELECT
+                COALESCE(SUM(
+                    CASE WHEN COALESCE(c.is_expense, 1) = 0
+                        THEN t.amount ELSE 0 END
+                ), 0),
+                COALESCE(SUM(
+                    CASE WHEN COALESCE(c.is_expense, 1) = 1
+                        THEN t.amount ELSE 0 END
+                ), 0)
+            FROM transactions AS t
+            LEFT JOIN categories AS c
+                ON c.user_id = t.user_id
+                AND LOWER(c.name) = LOWER(t.category)
+            WHERE t.user_id = ?
+                AND t.created_at >= ?
+                AND t.created_at < ?
+            ''',
+            (
+                user_id,
+                start_date.strftime("%Y-%m-%d %H:%M:%S"),
+                end_date.strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        income, expenses = cursor.fetchone()
         balance = income - expenses
         
         logger.info("[SUCCESS] Получен баланс за месяц: Пользователь=%s, Доходы=%.2f, Расходы=%.2f, Баланс=%.2f", 
