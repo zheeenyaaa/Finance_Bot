@@ -50,7 +50,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 ## Установка на macOS или Linux
 
 ```bash
-git clone <АДРЕС_РЕПОЗИТОРИЯ>
+git clone https://github.com/zheeenyaaa/Finance_Bot.git
 cd finance
 python3.11 -m venv .venv
 source .venv/bin/activate
